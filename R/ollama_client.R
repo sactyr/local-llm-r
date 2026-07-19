@@ -14,6 +14,31 @@ list_local_models <- function() {
   ollamar::list_models()
 }
 
+#' Truncate text to at most max_chars, preferring a sentence boundary over
+#' a hard character cutoff. Falls back to the last word boundary if the
+#' nearest sentence end would cut off more than half the target length.
+truncate_response <- function(text, max_chars) {
+  if (nchar(text) <= max_chars) return(text)
+
+  truncated <- substr(text, 1, max_chars)
+  sentence_ends <- gregexpr("[.!?]", truncated)[[1]]
+
+  if (sentence_ends[1] > 0) {
+    last_sentence_end <- max(sentence_ends)
+    if (last_sentence_end > max_chars * 0.5) {
+      return(substr(truncated, 1, last_sentence_end))
+    }
+  }
+
+  # fallback: cut at the last word boundary instead of mid-word
+  last_space <- max(gregexpr(" ", truncated)[[1]])
+  if (last_space > 0) {
+    return(substr(truncated, 1, last_space - 1))
+  }
+
+  truncated
+}
+
 #' Generate a response of roughly `max_chars` characters.
 #' Uses the /api/chat endpoint directly with think=FALSE at the top level -
 #' the /api/generate endpoint (used by ollamar::generate()) has a known bug
@@ -38,7 +63,7 @@ generate_response <- function(model, prompt, max_chars = 5000, temperature = 0.7
   elapsed <- round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 1)
 
   body <- resp_body_json(resp)
-  text <- substr(body$message$content, 1, max_chars)
+  text <- truncate_response(body$message$content, max_chars)
   attr(text, "elapsed_sec") <- elapsed
   text
 }
